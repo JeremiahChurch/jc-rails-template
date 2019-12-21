@@ -1,0 +1,6 @@
+#!/bin/bash
+set -e
+
+# make sure template is there
+ls ../rails-kickoff-template.rb
+YES_ALL=1 rails new Foobar -T --skip-coffee --webpack --database=postgresql -m '../rails-kickoff-template.rb'
