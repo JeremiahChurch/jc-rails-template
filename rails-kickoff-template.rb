@@ -23,7 +23,7 @@ end
 
 def git_proxy_commit(msg)
   git_proxy add: "."
-  git_proxy commit: %( -m "#{msg}" )
+  git_proxy commit: %( -m "#{msg}" --no-verify )
 end
 
 def run_template!
@@ -50,29 +50,21 @@ def run_template!
   setup_newrelic
   setup_environments
 
-  setup_javascript
+  #setup_javascript
   setup_generators
-
   setup_readme
-  create_database
-
-  fix_bundler_binstub
-
+  # fix_bundler_binstub # seemingly no longer needed?
   setup_simple_form
-
   enable_uuid_extensions
-
   setup_pghero_annotate_and_blazer
 
   # jest?
   # see what is needed for pagy setup
   # rubocop -a and git all the initial files
 
+  setup_commit_hooks
   setup_linters
-
-  if yes? "Automatically lint code in a pre-commit hook?"
-    after_bundle { setup_commit_hooks }
-  end
+  create_database
 
   generate_tmp_dirs
 
@@ -126,20 +118,21 @@ end
 
 def setup_slim
   after_bundle do
-    run "gem install html2slim"
-    run "erb2slim /app/views/ -d"
+    run "gem install html2slim --no-document"
+    run "erb2slim app/views/ -d"
+    run "gem uninstall html2slim -x"
     git_proxy_commit "Use Slim"
   end
 end
 
 def enable_uuid_extensions
-  bundle_command "exec rails generate migration enable_uuid_extensions"
   after_bundle do
-    migration = Dir.glob("#{Rails.root}/db/migrate/*enable_uuids.rb")
-    inject_into_file migration, after: /^def change\n/ do
+    bundle_command "exec rails generate migration enable_uuid_extensions"
+    migration = Dir.glob("db/migrate/*enable_uuid_extensions.rb").first # #glob returns array
+    inject_into_file migration, after: /def change\n/ do
       <<-RB
-          enable_extension "uuid-ossp"
-          enable_extension "pgcrypto"
+      enable_extension "uuid-ossp"
+      enable_extension "pgcrypto"
       RB
     end
   end
@@ -158,41 +151,37 @@ def setup_pghero_annotate_and_blazer
   bundle_command "exec rails g annotate:install"
 
   bundle_command "exec rails generate blazer:install"
-  after_bundle do
-    insert_into_file "config/routes.rb",
+  insert_into_file "config/routes.rb",
                    "    mount PgHero::Engine, at: \"pghero\"\n    mount Blazer::Engine, at: \"blazer\"\n\n",
                    after: "Rails.application.routes.draw do\n"
-  end
 end
 
 def setup_simple_form
+  after_bundle do
 
-  if yes?("Configure Simpleform to use bootstrap?")
-    bundle_command "exec rails generate simple_form:install --boostrap"
-    run "yarn add bootstrap"
-    create_file "app/javascript/stylesheets/application.scss" do
-      <<-RB
-        // ~ to tell webpack that this is not a relative import:
-        @import '~bootstrap/dist/css/bootstrap`
-      RB
+    if yes?("Configure Simpleform to use bootstrap?")
+      bundle_command "exec rails generate simple_form:install --bootstrap"
+      run "yarn add bootstrap --save"
+      create_file "app/javascript/stylesheets/application.scss" do
+        <<-RB
+  // ~ to tell webpack that this is not a relative import:
+  @import '~bootstrap/dist/css/bootstrap'
+        RB
+      end
+
+      inject_into_file "app/javascript/packs/application.js", before: /\z/ do
+        <<-RB
+    import '../stylesheets/application.scss'
+        RB
+      end
+
+      gsub_file "app/views/layouts/application.html.slim", /stylesheet_link_tag/, 'stylesheet_pack_tag'
+
+    else
+      bundle_command "exec rails generate simple_form:install"
     end
-
-    inject_into_file "app/javascript/packs/application.js", before: /^end\n/ do
-      <<-RB
-        import '../stylesheets/application'
-      RB
-    end
-
-    inject_into_file "app/views/layouts/application.html.slim", before: /^= javascript_pack_tag\n/ do
-      <<-RB
-        = stylesheet_pack_tag 'application'
-      RB
-    end
-
-  else
-    bundle_command "exec rails generate simple_form:install"
+    git_proxy_commit "Initialized simpleform"
   end
-  git_proxy_commit "Initialized simpleform"
 end
 
 def setup_environments
@@ -262,18 +251,18 @@ def output_final_instructions
       3) Setup Sendgrid add-in in Heroku
       4) Review your README.md file for needed updates
       5) Review your Gemfile for formatting
-      6) If you ran the install command with webpack=react, you also need to run: rake webpacker:install:react
+      6) If you ran the install command with webpack=react, you also need to run: `rails webpacker:install:react`
     MSG
 
-    say msg, :magenta
+    say msg, :cyan
   end
 end
 
-def setup_javascript
-  uncomment_lines "bin/setup", "bin/yarn"
-
-  git_proxy_commit "Configure Javascript"
-end
+#def setup_javascript
+#  uncomment_lines "bin/setup", "bin/yarn"
+#
+#  git_proxy_commit "Configure Javascript"
+#end
 
 def setup_sidekiq
   $using_sidekiq = yes?("Do you want to setup Sidekiq?")
@@ -322,6 +311,8 @@ def setup_linters
         - react
         - react-hooks
         - "@typescript-eslint"
+      settings:
+        "import/resolver": webpack
       rules: {
                max-len: [ 2, { code: 120, ignoreUrls: true} ], # increase line length from 100 to 120
                # FIXME: turn these back on when we get some semblance of code stability
@@ -412,68 +403,70 @@ def setup_linters
           - config/**/** # not worth beating up config file shape for this - dev/test/prod & routes files are biggest offenders and they feel weird split up
     RUBOCOP
 
+    create_file ".stylelintrc", <<~STYLE
+      {
+        "extends": "stylelint-config-standard"
+      }
+    STYLE
+
+    # removed test from eslint - re-add if jest gets added back in
     pkg_txt = <<-JSON
     "scripts": {
-      "lint:check": "eslint 'app/**/*.js'",
-      "lint:fix": "eslint --fix 'app/**/*.js'"
+      "lint": "eslint \\"app/**/*.{tsx,js,jsx}\\" --fix",
+      "lint:style": "stylelint \\"app/**/*.less\\" \\"app/**/*.css\\" \\"app/**/*.scss\\" \\"app/**/*.sass\\" --fix",
+      "lint:ruby": "rubocop -a",
+      "lint:ci": "npm-run-all -p lint lint:style",
+      "test": "jest",
+      "test:watch": "yarn test -- --watch",
+      "test:ruby": "rails test",
+      "validate": "npm-run-all -p -c lint lint:style lint:ruby",
+      "validate:all": "npm-run-all -p lint lint:style lint:ruby test test:ruby",
+      "test:suite": "npm-run-all -p test test:ruby",
+      "build:prod": "RAILS_ENV=production rails assets:precompile",
+      "build:prod-profile": "PROFILE=true RAILS_ENV=production rails assets:precompile",
+      "build:prod-prep": "RAILS_ENV=production rails assets:clobber"
     },
     JSON
 
     insert_into_file "package.json", pkg_txt, before: "\n  \"dependencies\": {"
 
     # https://www.npmjs.com/package/eslint-config-react-app
-    run "yarn add --dev eslint stylelint @typescript-eslint/eslint-plugin @typescript-eslint/parser babel-eslint eslint-config-airbnb
-eslint-config-airbnb eslint-plugin-import eslint-plugin-jest eslint-plugin-jsx-a11y eslint-plugin-react eslint-plugin-react-hooks stylelint-config-standard"
+    run "yarn add typescript" # technically overkill but I didn't want to dig up none typescript linter configs
+    run "yarn add --dev eslint stylelint @typescript-eslint/eslint-plugin eslint-import-resolver-webpack @typescript-eslint/parser babel-eslint eslint-config-airbnb eslint-config-airbnb eslint-plugin-import eslint-plugin-jest eslint-plugin-jsx-a11y eslint-plugin-react eslint-plugin-react-hooks stylelint-config-standard"
 
     git_proxy_commit "Setup styleguide and linters"
-  end
 
-  after_bundle do
-    bundle_command "exec standardrb --fix"
-    git_proxy_commit "automatically format code with standard"
+    gsub_file "app/javascript/packs/application.js", /require\("channels"\)/, '// require("channels")'
+
+    run "yarn validate"
+    git_proxy_commit "automatically format code with linters"
   end
 end
 
 def setup_commit_hooks
-  pkg_txt = <<-JSON
-    "husky": {
-      "hooks": {
-        "pre-commit": "yarn validate"
-    },
-  JSON
+  after_bundle do
 
-  insert_into_file "package.json", pkg_txt, before: "\n  \"dependencies\": {"
+    pkg_txt = <<-JSON
 
-  pkg_txt = <<-JSON
-    "scripts": {
-      "lint": "eslint \"app/javascript/react/**/*.{tsx,js,jsx}\" \"test/react/**/*.{ts,tsx,js}\" --fix",
-      "lint:style": "stylelint \"app/**/*.less\" \"app/**/*.css\" \"app/**/*.scss\" \"app/**/*.sass\" --fix",
-      "lint:ruby": "rubocop -a",
-      "lint:ci": "npm-run-all -p lint lint:style",
-      "test": "jest",
-      "test:watch": "npm test -- --watch",
-      "test:ruby": "rails test",
-      "validate": "npm-run-all -p lint lint:style lint:ruby",
-      "validate:all": "npm-run-all -p lint lint:style lint:ruby test test:ruby",
-      "test:suite": "npm-run-all -p test test:ruby",
-      "build:prod": "RAILS_ENV=production rails assets:precompile",
-      "build:prod-profile": "PROFILE=true RAILS_ENV=production rails assets:precompile",
-      "build:prod-prep": "RAILS_ENV=production rails assets:clobber",
-      "storybook": "start-storybook -p 6006",
-      "build-storybook": "build-storybook"
+  "husky": {
+    "hooks": {
+      "pre-commit": "yarn validate"
     }
-  JSON
-  insert_into_file "package.json", pkg_txt, before: "\n  \"dependencies\": {"
+  },
+    JSON
 
-  run "yarn add --dev husky npm-run-all"
+    insert_into_file "package.json", pkg_txt, before: "\n  \"dependencies\": {"
 
-  append_file ".gitignore", <<~GITIGNORE
-    /.idea/
-    /package-lock.json
-    /.env.local
-  GITIGNORE
+    run "yarn add --dev husky npm-run-all"
 
-  git_proxy_commit "Install Husky"
+    append_file ".gitignore", <<~GITIGNORE
+      /.idea/
+      /package-lock.json
+      /.env.local
+    GITIGNORE
+
+    git_proxy_commit "Install Husky"
+  end
 end
 
 def enable_discard
@@ -556,37 +549,37 @@ def setup_newrelic
     #
     # For full documentation of agent configuration options, please refer to
     # https://docs.newrelic.com/docs/agents/ruby-agent/installation-configuration/ruby-agent-configuration
-    
+
     common: &default_settings
       # Required license key associated with your New Relic account.
       license_key: Setup New Account!
-    
+
       # Your application name. Renaming here affects where data displays in New
       # Relic.  For more details, see https://docs.newrelic.com/docs/apm/new-relic-apm/maintenance/renaming-applications
       app_name: <PROJECT_NAME>
-    
+
       # To disable the agent regardless of other settings, uncomment the following:
       # agent_enabled: false
-    
+
       # Logging level for log/newrelic_agent.log
       log_level: info
-    
+
       # capture job arguments for sidekiq jobs https://docs.newrelic.com/docs/agents/ruby-agent/background-jobs/sidekiq-instrumentation
       attributes.include: job.sidekiq.args.*
-    
+
       # capture controller params for reproduction https://docs.newrelic.com/docs/agents/ruby-agent/configuration/ruby-agent-configuration#capture_params
       capture_params: true
-    
+
       # capture the actual sql that is slow rather than the obfuscated stuff
       slow_sql.record_sql: raw # https://docs.newrelic.com/docs/agents/ruby-agent/configuration/ruby-agent-configuration#slow_sql
       transaction_tracer.record_sql: raw # https://docs.newrelic.com/docs/agents/ruby-agent/configuration/ruby-agent-configuration#transaction_tracer
-    
+
       # https://docs.newrelic.com/docs/agents/ruby-agent/installation-configuration/ignoring-specific-transactions#ignore-rails
       # ignore health check URLs to keep our new relic throughput clean & more likely to return error messages
       rules:
         ignore_url_regexes: ["^/health_check"]
-    
-    
+
+
     # Environment-specific settings are in this section.
     # RAILS_ENV or RACK_ENV (as appropriate) is used to determine the environment.
     # If your application has other named environments, configure them here.
@@ -594,20 +587,19 @@ def setup_newrelic
       <<: *default_settings
       app_name: <PROJECT_NAME> (Development)
       developer_mode: true
-    
+
     test:
       <<: *default_settings
       # It doesn't make sense to report to New Relic from automated test runs.
       monitor_mode: false
-    
+
     staging:
       <<: *default_settings
       app_name: <PROJECT_NAME> (Staging)
-    
+
     production:
       <<: *default_settings
   NR
-
 
   git_proxy_commit "Setup Newrelic"
 end
