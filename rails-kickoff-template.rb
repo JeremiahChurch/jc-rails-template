@@ -178,6 +178,17 @@ def setup_simple_form
     else
       bundle_command 'exec rails generate simple_form:install'
     end
+    run 'yarn add resolve-url-loader --save'
+    inject_into_file 'app/config/webpack/environment.js', before: /module.exports/ do <<~ENVIRONMENT
+        // resolve-url-loader must be used before sass-loader
+        environment.loaders.get('sass').use.splice(-1, 0, {
+          loader: 'resolve-url-loader',
+        });
+      ENVIRONMENT
+    end
+
+
+
     git_proxy_commit 'Initialized simpleform'
   end
 end
@@ -370,8 +381,6 @@ def setup_linters
       AllCops:
         Exclude:
           - 'node_modules/**/*'
-          # DB file standards... don't really want to change those - they get hard to read
-          - 'db/**/*'
           # EBS deployer folder - no need to peek
           - 'pkg/**/*'
           # core ruby stuff that doesn't pass - not going to change it
