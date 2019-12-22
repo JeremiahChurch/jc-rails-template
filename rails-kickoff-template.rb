@@ -381,6 +381,8 @@ def setup_linters
       AllCops:
         Exclude:
           - 'node_modules/**/*'
+          # DB file standards... don't really want to change those - they get hard to read
+          - 'db/**/*'
           # EBS deployer folder - no need to peek
           - 'pkg/**/*'
           # core ruby stuff that doesn't pass - not going to change it
