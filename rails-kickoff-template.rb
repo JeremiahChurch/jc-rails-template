@@ -46,30 +46,34 @@ def run_template!
   heroku_ci_file
   enable_uuid_extensions
 
-  setup_testing
-  setup_slim
   enable_discard
   setup_oj
   setup_newrelic
   setup_environments
 
-  # setup_javascript
   setup_generators
   setup_readme
-  # fix_bundler_binstub # seemingly no longer needed?
-  setup_simple_form
+
   setup_pghero_annotate_and_blazer
 
   # jest?
   # see what is needed for pagy setup
 
-  setup_commit_hooks
-  setup_linters
-  create_database
+  after_bundle do
+    setup_slim
+    setup_testing
+    setup_simple_form
 
-  generate_tmp_dirs
+    setup_commit_hooks
+    setup_linters
 
-  output_final_instructions
+    webpack_config_additions
+    create_database
+
+    generate_tmp_dirs
+
+    output_final_instructions
+  end
 end
 
 def add_gems
@@ -118,12 +122,10 @@ def add_gems
 end
 
 def setup_slim
-  after_bundle do
-    run 'gem install html2slim --no-document'
-    run 'erb2slim app/views/ -d'
-    run 'gem uninstall html2slim -x'
-    git_proxy_commit 'Use Slim'
-  end
+  run 'gem install html2slim --no-document'
+  run 'erb2slim app/views/ -d'
+  run 'gem uninstall html2slim -x'
+  git_proxy_commit 'Use Slim'
 end
 
 def enable_uuid_extensions
@@ -156,7 +158,6 @@ def setup_pghero_annotate_and_blazer
 end
 
 def setup_simple_form
-  after_bundle do
     if yes?('Configure Simpleform to use bootstrap?')
       bundle_command 'exec rails generate simple_form:install --bootstrap'
       run 'yarn add bootstrap --save'
@@ -173,24 +174,14 @@ def setup_simple_form
         RB
       end
 
-      gsub_file 'app/views/layouts/application.html.slim', /stylesheet_link_tag/, 'stylesheet_pack_tag'
-
     else
       bundle_command 'exec rails generate simple_form:install'
     end
-    run 'yarn add resolve-url-loader --save'
-    inject_into_file 'app/config/webpack/environment.js', before: /module.exports/ do <<~ENVIRONMENT
-        // resolve-url-loader must be used before sass-loader
-        environment.loaders.get('sass').use.splice(-1, 0, {
-          loader: 'resolve-url-loader',
-        });
-      ENVIRONMENT
-    end
 
-
+    gsub_file 'app/views/layouts/application.html.slim', /stylesheet_link_tag/,
+              "    meta name=\"viewport\" content=\"minimum-scale=1, initial-scale=1, width=device-width, shrink-to-fit=no\"\nstylesheet_pack_tag"
 
     git_proxy_commit 'Initialized simpleform'
-  end
 end
 
 def setup_environments
@@ -247,24 +238,22 @@ def setup_environments
 end
 
 def output_final_instructions
-  after_bundle do
-    msg = <<~MSG
-      Template Completed!
+  msg = <<~MSG
+    Template Completed!
 
-      Please review the above output for issues.
+    Please review the above output for issues.
 
-      To finish setup, you must prepare Heroku with at minimum the following steps
-      1) Configure Newrelic
-      2) Setup Redis (if using Sidekiq)
-      3) Setup Sendgrid add-in in Heroku
-      4) Setup lib/tasks/scheduler.rake in Heroku Scheduler to run nightly!
-      5) Review your README.md file for needed updates
-      6) Review your Gemfile for formatting
-      7) If you ran the install command with webpack=react, you also need to run: `rails webpacker:install:react`
-    MSG
+    To finish setup, you must prepare Heroku with at minimum the following steps
+    1) Configure Newrelic
+    2) Setup Redis (if using Sidekiq)
+    3) Setup Sendgrid add-in in Heroku
+    4) Setup lib/tasks/scheduler.rake in Heroku Scheduler to run nightly!
+    5) Review your README.md file for needed updates
+    6) Review your Gemfile for formatting
+    7) If you ran the install command with webpack=react, you also need to run: `rails webpacker:install:react`
+  MSG
 
-    say msg, :cyan
-  end
+  say msg, :cyan
 end
 
 # def setup_javascript
@@ -298,185 +287,193 @@ def setup_sidekiq
 end
 
 def setup_linters
-  after_bundle do
-    create_file '.eslintrc.yml', <<~ESLINTRC
-      env:
-        browser: true
-        es6: true
-      extends:
-        [# skip screen reader usability for now https://github.com/airbnb/javascript/issues/1665#issuecomment-466318869
-        airbnb-base,
-        airbnb/rules/react,
-        "plugin:@typescript-eslint/recommended",
-        plugin:import/typescript
-        ]
-      parser: "@typescript-eslint/parser"
-      globals:
-        Atomics: readonly
-        SharedArrayBuffer: readonly
-      parserOptions:
-        ecmaFeatures:
-          jsx: true
-        ecmaVersion: 2018
-        sourceType: module
-      plugins:
-        - react
-        - react-hooks
-        - "@typescript-eslint"
-      settings:
-        "import/resolver": webpack
-      rules: {
-               max-len: [ 2, { code: 120, ignoreUrls: true} ], # increase line length from 100 to 120
-               # FIXME: turn these back on when we get some semblance of code stability
-               react/prop-types: off,
-               react/destructuring-assignment: off,
-               react/prefer-stateless-function: off,
-               no-unused-expressions: ['error', allowTernary: true ],
-               import/no-cycle: off,
-               no-shadow: off, # refactoring to get rid of these is a good one - these are ugly to read
-               react-hooks/exhaustive-deps: off, # I write shitty code and don't fully understand these yet
-               '@typescript-eslint/explicit-function-return-type': off, # for now... until I get bored and want to go add them in
-               '@typescript-eslint/no-explicit-any': off # same as above...
-      }
-      overrides:
-        [
-        { # /test/react - all of our testing - sets up jest and etc rules - enforces .test.js extension ONLY - NO JSX ext
-          files: [
-            "*.test.{js,ts,tsx}"
-          ],
-          env: {
-            jest: true #// now **/*.test.js files' env has both es6 *and* jest
-          },
-            extends: [plugin:jest/recommended],
-            plugins: [jest],
-          rules: {
-            "jest/no-disabled-tests": "warn",
-            "jest/no-focused-tests": "error",
-            "jest/no-identical-title": "error",
-            "jest/prefer-to-have-length": "warn",
-            "jest/valid-expect": "error",
-            "react/jsx-filename-extension": [1, { "extensions": [".js"] }], # follow the jest pattern and use js
-          }
+  create_file '.eslintrc.yml', <<~ESLINTRC
+    env:
+      browser: true
+      es6: true
+    extends:
+      [# skip screen reader usability for now https://github.com/airbnb/javascript/issues/1665#issuecomment-466318869
+      airbnb-base,
+      airbnb/rules/react,
+      "plugin:@typescript-eslint/recommended",
+      plugin:import/typescript
+      ]
+    parser: "@typescript-eslint/parser"
+    globals:
+      Atomics: readonly
+      SharedArrayBuffer: readonly
+    parserOptions:
+      ecmaFeatures:
+        jsx: true
+      ecmaVersion: 2018
+      sourceType: module
+    plugins:
+      - react
+      - react-hooks
+      - "@typescript-eslint"
+    settings:
+      "import/resolver": webpack
+    rules: {
+             max-len: [ 2, { code: 120, ignoreUrls: true} ], # increase line length from 100 to 120
+             # FIXME: turn these back on when we get some semblance of code stability
+             react/prop-types: off,
+             react/destructuring-assignment: off,
+             react/prefer-stateless-function: off,
+             no-unused-expressions: ['error', allowTernary: true ],
+             import/no-cycle: off,
+             no-shadow: off, # refactoring to get rid of these is a good one - these are ugly to read
+             react-hooks/exhaustive-deps: off, # I write shitty code and don't fully understand these yet
+             '@typescript-eslint/explicit-function-return-type': off, # for now... until I get bored and want to go add them in
+             '@typescript-eslint/no-explicit-any': off # same as above...
+    }
+    overrides:
+      [
+      { # /test/react - all of our testing - sets up jest and etc rules - enforces .test.js extension ONLY - NO JSX ext
+        files: [
+          "*.test.{js,ts,tsx}"
+        ],
+        env: {
+          jest: true #// now **/*.test.js files' env has both es6 *and* jest
         },
-        { # all of our storybook .stories.js files
-          files: [
-            "*.stories.js"
-          ],
-          rules: {
-            "react/jsx-filename-extension": [1, { "extensions": [".js"] }], # follow the jest pattern and use js
-          }
-        },
-        { # all of our typescript files
-          files: [
-            "*.tsx"
-          ],
-          rules: {
-            "react/jsx-filename-extension": [1, { "extensions": [".tsx"] }], # follow the jest pattern and use js
-          }
+          extends: [plugin:jest/recommended],
+          plugins: [jest],
+        rules: {
+          "jest/no-disabled-tests": "warn",
+          "jest/no-focused-tests": "error",
+          "jest/no-identical-title": "error",
+          "jest/prefer-to-have-length": "warn",
+          "jest/valid-expect": "error",
+          "react/jsx-filename-extension": [1, { "extensions": [".js"] }], # follow the jest pattern and use js
         }
-        ]
-    ESLINTRC
-
-    create_file '.rubocop.yml', <<~RUBOCOP
-      AllCops:
-        Exclude:
-          - 'node_modules/**/*'
-          # DB file standards... don't really want to change those - they get hard to read
-          - 'db/**/*'
-          # EBS deployer folder - no need to peek
-          - 'pkg/**/*'
-          # core ruby stuff that doesn't pass - not going to change it
-          - 'bin/**/*'
-          - 'db/schema.rb'
-          - lib/templates/active_record/model/model.rb # this is a weird template file so there isn't actually an issue here.
-          - lib/templates/rails/**/*
-          - lib/generators/component_generator.rb # copy and paste job - it's ugly
-          - config/initializers/simple_form_bootstrap.rb
-          - config/initializers/devise.rb # long line lengths for seeds...
-          - lib/tasks/auto_annotate_models.rake # auto genned from gem
-          - 'vendor/**/*' # exclude all the vendor stuff
-          - data_import/notes.rb
-        TargetRubyVersion: 2.6
-        DisplayCopNames: true # so we know which cop to disable when it annoys us
-
-      Metrics/LineLength:
-        Max: 140
-
-      Style/Documentation:
-        Enabled: false
-
-      Style/ClassAndModuleChildren:
-        Enabled: false
-
-      Metrics/BlockLength:
-        ExcludedMethods:
-          - included # for concerns - silly to alarm on those
-        Exclude:
-          - config/**/** # not worth beating up config file shape for this - dev/test/prod & routes files are biggest offenders and they feel weird split up
-    RUBOCOP
-
-    create_file '.stylelintrc', <<~STYLE
-      {
-        "extends": "stylelint-config-standard"
+      },
+      { # all of our storybook .stories.js files
+        files: [
+          "*.stories.js"
+        ],
+        rules: {
+          "react/jsx-filename-extension": [1, { "extensions": [".js"] }], # follow the jest pattern and use js
+        }
+      },
+      { # all of our typescript files
+        files: [
+          "*.tsx"
+        ],
+        rules: {
+          "react/jsx-filename-extension": [1, { "extensions": [".tsx"] }], # follow the jest pattern and use js
+        }
       }
-    STYLE
+      ]
+  ESLINTRC
 
-    # removed test from eslint - re-add if jest gets added back in
-    pkg_txt = <<-JSON
-    "scripts": {
-      "lint": "eslint \\"app/**/*.{tsx,js,jsx}\\" --fix",
-      "lint:style": "stylelint \\"app/**/*.less\\" \\"app/**/*.css\\" \\"app/**/*.scss\\" \\"app/**/*.sass\\" --fix",
-      "lint:ruby": "rubocop -a",
-      "lint:ci": "npm-run-all -p lint lint:style",
-      "test": "jest",
-      "test:watch": "yarn test -- --watch",
-      "test:ruby": "rails test",
-      "validate": "npm-run-all -p -c lint lint:style lint:ruby",
-      "validate:all": "npm-run-all -p lint lint:style lint:ruby test test:ruby",
-      "test:suite": "npm-run-all -p test:ruby",
-      "build:prod": "RAILS_ENV=production rails assets:precompile",
-      "build:prod-profile": "PROFILE=true RAILS_ENV=production rails assets:precompile",
-      "build:prod-prep": "RAILS_ENV=production rails assets:clobber"
-    },
-    JSON
+  create_file '.rubocop.yml', <<~RUBOCOP
+    AllCops:
+      Exclude:
+        - 'node_modules/**/*'
+        # DB file standards... don't really want to change those - they get hard to read
+        - 'db/**/*'
+        # EBS deployer folder - no need to peek
+        - 'pkg/**/*'
+        # core ruby stuff that doesn't pass - not going to change it
+        - 'bin/**/*'
+        - 'db/schema.rb'
+        - lib/templates/active_record/model/model.rb # this is a weird template file so there isn't actually an issue here.
+        - lib/templates/rails/**/*
+        - lib/generators/component_generator.rb # copy and paste job - it's ugly
+        - config/initializers/simple_form_bootstrap.rb
+        - config/initializers/devise.rb # long line lengths for seeds...
+        - lib/tasks/auto_annotate_models.rake # auto genned from gem
+        - 'vendor/**/*' # exclude all the vendor stuff
+        - data_import/notes.rb
+      TargetRubyVersion: 2.6
+      DisplayCopNames: true # so we know which cop to disable when it annoys us
 
-    insert_into_file 'package.json', pkg_txt, before: "\n  \"dependencies\": {"
+    Metrics/LineLength:
+      Max: 140
 
-    # https://www.npmjs.com/package/eslint-config-react-app
-    run 'yarn add typescript' # technically overkill but I didn't want to dig up none typescript linter configs
-    run 'yarn add --dev eslint stylelint @typescript-eslint/eslint-plugin eslint-import-resolver-webpack @typescript-eslint/parser babel-eslint eslint-config-airbnb eslint-config-airbnb eslint-plugin-import eslint-plugin-jest eslint-plugin-jsx-a11y eslint-plugin-react eslint-plugin-react-hooks stylelint-config-standard'
+    Style/Documentation:
+      Enabled: false
 
-    git_proxy_commit 'Setup styleguide and linters'
+    Style/ClassAndModuleChildren:
+      Enabled: false
 
-    gsub_file 'config/webpacker.yml', /localhost/, '0.0.0.0'
-    gsub_file 'config/webpacker.yml', /hmr: false/, 'hmr: true'
+    Metrics/BlockLength:
+      ExcludedMethods:
+        - included # for concerns - silly to alarm on those
+      Exclude:
+        - config/**/** # not worth beating up config file shape for this - dev/test/prod & routes files are biggest offenders and they feel weird split up
+  RUBOCOP
 
-    git_proxy_commit 'cleanup webpacker.yml'
+  create_file '.stylelintrc', <<~STYLE
+    {
+      "extends": "stylelint-config-standard"
+    }
+  STYLE
 
-    gsub_file 'app/javascript/packs/application.js', /require\("channels"\)/, '// require("channels")'
+  # removed test from eslint - re-add if jest gets added back in
+  pkg_txt = <<-JSON
+  "scripts": {
+    "lint": "eslint \\"app/**/*.{tsx,js,jsx}\\" --fix",
+    "lint:style": "stylelint \\"app/**/*.less\\" \\"app/**/*.css\\" \\"app/**/*.scss\\" \\"app/**/*.sass\\" --fix",
+    "lint:ruby": "rubocop -a",
+    "lint:ci": "npm-run-all -p lint lint:style",
+    "test": "jest",
+    "test:watch": "yarn test -- --watch",
+    "test:ruby": "rails test",
+    "validate": "npm-run-all -p -c lint lint:style lint:ruby",
+    "validate:all": "npm-run-all -p lint lint:style lint:ruby test test:ruby",
+    "test:suite": "npm-run-all -p test:ruby",
+    "build:prod": "RAILS_ENV=production rails assets:precompile",
+    "build:prod-profile": "PROFILE=true RAILS_ENV=production rails assets:precompile",
+    "build:prod-prep": "RAILS_ENV=production rails assets:clobber"
+  },
+  JSON
 
-    run 'yarn validate'
-    git_proxy_commit 'automatically format code with linters'
+  insert_into_file 'package.json', pkg_txt, before: "\n  \"dependencies\": {"
+
+  # https://www.npmjs.com/package/eslint-config-react-app
+  run 'yarn add typescript' # technically overkill but I didn't want to dig up none typescript linter configs
+  run 'yarn add --dev eslint stylelint @typescript-eslint/eslint-plugin eslint-import-resolver-webpack @typescript-eslint/parser babel-eslint eslint-config-airbnb eslint-config-airbnb eslint-plugin-import eslint-plugin-jest eslint-plugin-jsx-a11y eslint-plugin-react eslint-plugin-react-hooks stylelint-config-standard'
+
+  git_proxy_commit 'Setup styleguide and linters'
+
+  gsub_file 'config/webpacker.yml', /localhost/, '0.0.0.0'
+  gsub_file 'config/webpacker.yml', /hmr: false/, 'hmr: true'
+
+  git_proxy_commit 'cleanup webpacker.yml'
+
+  gsub_file 'app/javascript/packs/application.js', /require\("channels"\)/, '// require("channels")'
+
+  run 'yarn validate'
+  git_proxy_commit 'automatically format code with linters'
+end
+
+def webpack_config_additions
+  run 'yarn add resolve-url-loader --save'
+  inject_into_file 'config/webpack/environment.js', before: /module.exports/ do <<~ENVIRONMENT
+        // resolve-url-loader must be used before sass-loader
+        environment.loaders.get('sass').use.splice(-1, 0, {
+          loader: 'resolve-url-loader',
+        });
+  ENVIRONMENT
   end
+  git_proxy_commit 'add webpack config additions'
 end
 
 def setup_commit_hooks
-  after_bundle do
-    pkg_txt = <<-JSON
+  pkg_txt = <<-JSON
 
-  "husky": {
-    "hooks": {
-      "pre-commit": "yarn validate"
-    }
-  },
-    JSON
+"husky": {
+  "hooks": {
+    "pre-commit": "yarn validate"
+  }
+},
+  JSON
 
-    insert_into_file 'package.json', pkg_txt, before: "\n  \"dependencies\": {"
+  insert_into_file 'package.json', pkg_txt, before: "\n  \"dependencies\": {"
 
-    run 'yarn add --dev husky npm-run-all'
+  run 'yarn add --dev husky npm-run-all'
 
-    git_proxy_commit 'Install Husky'
-  end
+  git_proxy_commit 'Install Husky'
 end
 
 def enable_discard
@@ -515,17 +512,8 @@ def setup_oj
 end
 
 def create_database
-  after_bundle do
-    bundle_command 'exec rails db:create db:migrate'
-    git_proxy_commit 'Create and migrate database'
-  end
-end
-
-def fix_bundler_binstub
-  after_bundle do
-    run 'bundle binstubs bundler --force'
-    git_proxy_commit "Fix bundler binstub\n\nhttps://github.com/rails/rails/issues/31193"
-  end
+  bundle_command 'exec rails db:create db:migrate'
+  git_proxy_commit 'Create and migrate database'
 end
 
 def setup_newrelic
@@ -626,69 +614,67 @@ def setup_readme
 end
 
 def setup_testing
-  after_bundle do
-    bundle_command 'exec rails generate rspec:install'
-    run 'bundle binstubs rspec-core'
-    git_proxy_commit 'RSpec install'
+  bundle_command 'exec rails generate rspec:install'
+  run 'bundle binstubs rspec-core'
+  git_proxy_commit 'RSpec install'
 
-    create_file 'spec/support/chromedriver.rb', <<~RB
-      require 'selenium/webdriver'
+  create_file 'spec/support/chromedriver.rb', <<~RB
+    require 'selenium/webdriver'
 
-      Capybara.register_driver :chrome do |app|
-        Capybara::Selenium::Driver.new(app, browser: :chrome)
-      end
+    Capybara.register_driver :chrome do |app|
+      Capybara::Selenium::Driver.new(app, browser: :chrome)
+    end
 
-      Capybara.register_driver :headless_chrome do |app|
-        capabilities = Selenium::WebDriver::Remote::Capabilities.chrome(
-          chromeOptions: { args: %w[headless disable-gpu] }
-        )
+    Capybara.register_driver :headless_chrome do |app|
+      capabilities = Selenium::WebDriver::Remote::Capabilities.chrome(
+        chromeOptions: { args: %w[headless disable-gpu] }
+      )
 
-        Capybara::Selenium::Driver.new(
-          app,
-          browser: :chrome,
-          desired_capabilities: capabilities
-        )
-      end
+      Capybara::Selenium::Driver.new(
+        app,
+        browser: :chrome,
+        desired_capabilities: capabilities
+      )
+    end
 
-      Capybara.javascript_driver = :headless_chrome
-    RB
+    Capybara.javascript_driver = :headless_chrome
+  RB
 
-    create_file 'spec/support/shoulda_matchers.rb', <<-SH
-    Shoulda::Matchers.configure do |config|
-      config.integrate do |with|
-        with.test_framework :rspec
-        with.library :rails
+  create_file 'spec/support/shoulda_matchers.rb', <<-SH
+  Shoulda::Matchers.configure do |config|
+    config.integrate do |with|
+      with.test_framework :rspec
+      with.library :rails
+    end
+  end
+  SH
+
+  create_file 'spec/lint_spec.rb', <<~RB
+    # consider switching to rake task in the future: https://github.com/thoughtbot/factory_bot/blob/master/GETTING_STARTED.md#linting-factories
+    require 'rails_helper'
+    RSpec.describe "Factories" do
+      it 'lints successfully' do
+        FactoryBot.lint
       end
     end
-    SH
+  RB
 
-    create_file 'spec/lint_spec.rb', <<~RB
-      # consider switching to rake task in the future: https://github.com/thoughtbot/factory_bot/blob/master/GETTING_STARTED.md#linting-factories
-      require 'rails_helper'
-      RSpec.describe "Factories" do
-        it 'lints successfully' do
-          FactoryBot.lint
-        end
-      end
-    RB
+  uncomment_lines 'spec/rails_helper.rb', /Dir\[Rails\.root\.join/
 
-    uncomment_lines 'spec/rails_helper.rb', /Dir\[Rails\.root\.join/
+  gsub_file 'spec/spec_helper.rb', "=begin\n", ''
+  gsub_file 'spec/spec_helper.rb', "=end\n", ''
 
-    gsub_file 'spec/spec_helper.rb', "=begin\n", ''
-    gsub_file 'spec/spec_helper.rb', "=end\n", ''
+  comment_lines 'spec/rails_helper.rb', 'config.fixture_path ='
 
-    comment_lines 'spec/rails_helper.rb', 'config.fixture_path ='
+  insert_into_file 'spec/rails_helper.rb',
+                   "  config.include FactoryBot::Syntax::Methods\n\n",
+                   after: "RSpec.configure do |config|\n"
 
-    insert_into_file 'spec/rails_helper.rb',
-                     "  config.include FactoryBot::Syntax::Methods\n\n",
-                     after: "RSpec.configure do |config|\n"
+  insert_into_file 'spec/rails_helper.rb',
+                   "require \"capybara/rails\"\n",
+                   after: "Add additional requires below this line. Rails is not loaded until this point!\n"
 
-    insert_into_file 'spec/rails_helper.rb',
-                     "require \"capybara/rails\"\n",
-                     after: "Add additional requires below this line. Rails is not loaded until this point!\n"
-
-    git_proxy_commit 'Finish setting up testing'
-  end
+  git_proxy_commit 'Finish setting up testing'
 end
 
 def main_config_files
