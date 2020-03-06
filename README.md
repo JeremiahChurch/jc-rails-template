@@ -2,7 +2,7 @@
 
 Fork of the excellent [Tanooki Template](https://github.com/TanookiLabs/tanooki-rails-template)
 
-tempered to my preferences
+Tempered to my personal preferences.
 
 ### How to use this template
 
@@ -219,8 +219,9 @@ add the shoulda matchers to the support folder
 ###### Slim
 
 ```bash
-bundle add "erb2slim" &&
-HAML_RAILS_DELETE_ERB=true rake haml:erb2haml
+gem install html2slim --no-document
+erb2slim app/views/ -d
+gem uninstall html2slim -x
 ```
 
 ###### Newrelic
@@ -253,8 +254,22 @@ configure _app/controllers/application_controller.rb_
 bundle add dotenv-rails --group "development, test"
 bundle add bullet --group "development"
 bundle add rack-timeout --group "production"
+simplecov
+oj
+discard
+pg_hero
+blazer
+sendgrid_mailer
+slim
+annotate
+simpleform
+
 ```
 
 ##### Setup a README
 
 Copy and update `templates/README-template.md` to `README.md`
+
+##### to test
+
+`ruby test/test_*.rb`

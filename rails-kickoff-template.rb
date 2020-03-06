@@ -116,6 +116,7 @@ def add_gems
     gem 'capybara'
     gem 'capybara-selenium'
     gem 'shoulda-matchers'
+    gem 'simplecov', require: false
   end
 
   git_proxy_commit 'Add custom gems'
@@ -669,6 +670,21 @@ def setup_testing
   insert_into_file 'spec/rails_helper.rb',
                    "  config.include FactoryBot::Syntax::Methods\n\n",
                    after: "RSpec.configure do |config|\n"
+
+  insert_into_file 'spec/rails_helper.rb', before: "RSpec.configure do |config|\n" do
+    <<-SIMPLECOV
+if ENV['RAILS_ENV'] == 'test'
+  require 'simplecov'
+  SimpleCov.start 'rails' do
+    add_group 'Admin', ['app/dashboards', 'app/fields']
+    add_filter '/lib/templates/' # don't include rails template files
+    coverage_dir 'coverage/rails'
+    # SimpleCov.minimum_coverage 80
+  end
+  puts 'SimpleCov started successfully!'
+end
+    SIMPLECOV
+  end
 
   insert_into_file 'spec/rails_helper.rb',
                    "require \"capybara/rails\"\n",
