@@ -110,6 +110,7 @@ def add_gems
     gem 'bundler-audit' # security issues
     gem 'bundler-leak' # memory issues
     gem 'annotate'
+    gem 'rubocop'
   end
 
   gem_group :test do
@@ -272,7 +273,7 @@ def setup_sidekiq
 
   after_bundle do
     insert_into_file 'config/application.rb',
-                     "    config.active_job.queue_adapter = :sidekiq\n\n",
+                     "    config.active_job.queue_adapter = :sidekiq\n\n# generate structure.sql instead of schema.rb\nconfig.active_record.schema_format = :sql\n\n",
                      after: "class Application < Rails::Application\n"
 
     append_file 'Procfile', <<~PROCFILE
