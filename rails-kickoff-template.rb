@@ -388,7 +388,7 @@ def setup_linters
       TargetRubyVersion: 2.6
       DisplayCopNames: true # so we know which cop to disable when it annoys us
 
-    Metrics/LineLength:
+    Layout/LineLength:
       Max: 140
 
     Style/Documentation:
@@ -604,6 +604,8 @@ def setup_newrelic
 end
 
 def setup_readme
+  remove_file '.ruby-version'
+
   remove_file 'README.md'
   get "#{REPOSITORY_PATH}/templates/README.md", 'README.md'
   unless $using_sidekiq
