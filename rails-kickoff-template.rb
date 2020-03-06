@@ -739,6 +739,8 @@ def main_config_files
 
     /.idea/
     /package-lock.json
+
+    /coverage
   GITIGNORE
 
   create_file '.env', <<~ENV
