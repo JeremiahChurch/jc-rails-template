@@ -604,8 +604,6 @@ def setup_newrelic
 end
 
 def setup_readme
-  remove_file '.ruby-version'
-
   remove_file 'README.md'
   get "#{REPOSITORY_PATH}/templates/README.md", 'README.md'
   unless $using_sidekiq
