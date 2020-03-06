@@ -736,6 +736,8 @@ def main_config_files
     .env.test.local
 
     /.idea/
+    .generators
+    .rakeTasks
     /package-lock.json
 
     /coverage
