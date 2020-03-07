@@ -672,7 +672,7 @@ def setup_testing
                    "  config.include FactoryBot::Syntax::Methods\n\n",
                    after: "RSpec.configure do |config|\n"
 
-  insert_into_file 'spec/rails_helper.rb', before: "RSpec.configure do |config|\n" do
+  insert_into_file 'spec/spec_helper.rb', before: "RSpec.configure do |config|\n" do
     <<-SIMPLECOV
 if ENV['RAILS_ENV'] == 'test'
   require 'simplecov'
