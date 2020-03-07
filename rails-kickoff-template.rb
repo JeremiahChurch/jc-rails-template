@@ -180,8 +180,8 @@ def setup_simple_form
       bundle_command 'exec rails generate simple_form:install'
     end
 
-    gsub_file 'app/views/layouts/application.html.slim', /stylesheet_link_tag/,
-              "    meta name=\"viewport\" content=\"minimum-scale=1, initial-scale=1, width=device-width, shrink-to-fit=no\"\nstylesheet_pack_tag"
+    gsub_file 'app/views/layouts/application.html.slim', /= stylesheet_link_tag/,
+              "    meta name=\"viewport\" content=\"minimum-scale=1, initial-scale=1, width=device-width, shrink-to-fit=no\"\n    = stylesheet_pack_tag"
 
     git_proxy_commit 'Initialized simpleform'
 end
