@@ -674,7 +674,7 @@ def setup_testing
 
   insert_into_file 'spec/spec_helper.rb', before: "RSpec.configure do |config|\n" do
     <<-SIMPLECOV
-if ENV['RAILS_ENV'] == 'test'
+if ENV['COVERAGE'] == 'true'
   require 'simplecov'
   SimpleCov.start 'rails' do
     add_group 'Admin', ['app/dashboards', 'app/fields']
@@ -747,6 +747,7 @@ def main_config_files
   create_file '.env', <<~ENV
     WEB_CONCURRENCY=1 # set to 1 in dev most of the time for easy testing
     SEND_EMAIL=false # change to true to send email via sendgrid
+    # COVERAGE=true # enable to get simeplecov output
   ENV
 
   git_proxy_commit 'Setup config files'
