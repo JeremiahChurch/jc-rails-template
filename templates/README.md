@@ -2,7 +2,7 @@
 
 ### Services used
 
-- Postgresql (structure.sql instead of schema.rb)
+- Postgresql
 - Newrelic
 - Redis (required for Sidekiq)
 

@@ -273,7 +273,7 @@ def setup_sidekiq
 
   after_bundle do
     insert_into_file 'config/application.rb',
-                     "    config.active_job.queue_adapter = :sidekiq\n\n# generate structure.sql instead of schema.rb\nconfig.active_record.schema_format = :sql\n\n",
+                     "    config.active_job.queue_adapter = :sidekiq\n\n",
                      after: "class Application < Rails::Application\n"
 
     append_file 'Procfile', <<~PROCFILE
