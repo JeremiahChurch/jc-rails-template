@@ -91,6 +91,7 @@ def add_gems
   # monitoring
   gem 'blazer' # https://github.com/ankane/blazer
   gem 'pghero' # https://github.com/ankane/pghero/blob/master/guides/Rails.md
+  gem 'newrelic_rpm'
 
   gem 'sendgrid-actionmailer' # email
 
