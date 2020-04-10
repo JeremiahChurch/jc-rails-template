@@ -115,7 +115,7 @@ def add_gems
 
   gem_group :test do
     gem 'capybara'
-    gem 'capybara-selenium'
+    gem 'selenium-webdriver'
     gem 'shoulda-matchers'
     gem 'simplecov', require: false
   end
@@ -621,25 +621,17 @@ def setup_testing
   git_proxy_commit 'RSpec install'
 
   create_file 'spec/support/chromedriver.rb', <<~RB
-    require 'selenium/webdriver'
-
-    Capybara.register_driver :chrome do |app|
-      Capybara::Selenium::Driver.new(app, browser: :chrome)
+    RSpec.configure do |config|
+      config.before(:each, type: :system) do
+        driven_by :rack_test, screen_size: [1366, 768]
+      end
+    
+      config.before(:each, type: :system, js: true) do
+        driven_by :selenium, using: :headless_chrome, screen_size: [1366, 768]
+      end
     end
-
-    Capybara.register_driver :headless_chrome do |app|
-      capabilities = Selenium::WebDriver::Remote::Capabilities.chrome(
-        chromeOptions: { args: %w[headless disable-gpu] }
-      )
-
-      Capybara::Selenium::Driver.new(
-        app,
-        browser: :chrome,
-        desired_capabilities: capabilities
-      )
-    end
-
-    Capybara.javascript_driver = :headless_chrome
+    
+    Capybara.asset_host = 'http://localhost:3000'
   RB
 
   create_file 'spec/support/shoulda_matchers.rb', <<-SH
