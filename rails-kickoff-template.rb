@@ -91,6 +91,7 @@ def add_gems
   # monitoring
   gem 'blazer' # https://github.com/ankane/blazer
   gem 'pghero' # https://github.com/ankane/pghero/blob/master/guides/Rails.md
+  gem 'newrelic_rpm'
 
   gem 'sendgrid-actionmailer' # email
 
@@ -180,8 +181,8 @@ def setup_simple_form
       bundle_command 'exec rails generate simple_form:install'
     end
 
-    gsub_file 'app/views/layouts/application.html.slim', /stylesheet_link_tag/,
-              "    meta name=\"viewport\" content=\"minimum-scale=1, initial-scale=1, width=device-width, shrink-to-fit=no\"\nstylesheet_pack_tag"
+    gsub_file 'app/views/layouts/application.html.slim', /= stylesheet_link_tag/,
+              "    meta name=\"viewport\" content=\"minimum-scale=1, initial-scale=1, width=device-width, shrink-to-fit=no\"\n    = stylesheet_pack_tag"
 
     git_proxy_commit 'Initialized simpleform'
 end
@@ -273,7 +274,7 @@ def setup_sidekiq
 
   after_bundle do
     insert_into_file 'config/application.rb',
-                     "    config.active_job.queue_adapter = :sidekiq\n\n# generate structure.sql instead of schema.rb\nconfig.active_record.schema_format = :sql\n\n",
+                     "    config.active_job.queue_adapter = :sidekiq\n\n",
                      after: "class Application < Rails::Application\n"
 
     append_file 'Procfile', <<~PROCFILE
@@ -664,9 +665,9 @@ def setup_testing
                    "  config.include FactoryBot::Syntax::Methods\n\n",
                    after: "RSpec.configure do |config|\n"
 
-  insert_into_file 'spec/rails_helper.rb', before: "RSpec.configure do |config|\n" do
+  insert_into_file 'spec/spec_helper.rb', before: "RSpec.configure do |config|\n" do
     <<-SIMPLECOV
-if ENV['RAILS_ENV'] == 'test'
+if ENV['COVERAGE'] == 'true'
   require 'simplecov'
   SimpleCov.start 'rails' do
     add_group 'Admin', ['app/dashboards', 'app/fields']
@@ -739,6 +740,7 @@ def main_config_files
   create_file '.env', <<~ENV
     WEB_CONCURRENCY=1 # set to 1 in dev most of the time for easy testing
     SEND_EMAIL=false # change to true to send email via sendgrid
+    # COVERAGE=true # enable to get simeplecov output
   ENV
 
   git_proxy_commit 'Setup config files'
